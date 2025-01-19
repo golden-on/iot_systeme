@@ -1,14 +1,29 @@
 import asyncio
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
-import paho.mqtt.client as mqtt
 import json
+from bson import ObjectId
 from dotenv import load_dotenv
 import os
 
 app = FastAPI()
+
+# Enable CORS
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # MongoDB connection
 load_dotenv()
@@ -18,7 +33,7 @@ client = AsyncIOMotorClient(MONGO_URI)
 db = client.health_monitoring
 
 # MQTT client configuration
-BROKER = "test.mosquitto.org"
+BROKER = "broker.hivemq.com"
 PORT = 1883
 TOPIC = "health/monitoring"
 
@@ -27,21 +42,20 @@ def on_message(client, userdata, msg):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        payload = json.loads(msg.payload.decode())
-        loop.run_until_complete(save_data(payload))
+        # Process the message
+        print(f"Received message: {msg.payload.decode()}")
     finally:
         loop.close()
 
-async def save_data(payload):
-    await db.health_data.insert_one(payload)
-    print(f"Data saved: {payload}")
-
-# MQTT setup
+# Initialize MQTT client
 mqtt_client = mqtt.Client()
-
 mqtt_client.on_message = on_message
+
+# Connect to the MQTT broker
 mqtt_client.connect(BROKER, PORT, 60)
-mqtt_client.subscribe(TOPIC)
+
+# Start the MQTT client loop
+mqtt_client.loop_start()
 
 @app.on_event("startup")
 async def start_mqtt():
@@ -50,6 +64,14 @@ async def start_mqtt():
 @app.on_event("shutdown")
 async def stop_mqtt():
     mqtt_client.loop_stop()
+
+# Custom JSON encoder for ObjectId
+class JSONEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        return super().default(o)
+
 # Pydantic model for health data
 class HealthData(BaseModel):
     device_id: str
@@ -67,10 +89,10 @@ async def save_health_data(data: HealthData):
         raise HTTPException(status_code=500, detail=f"Failed to save data: {str(e)}")
 
 @app.get("/data/")
-async def get_all_health_data():
+async def get_data():
     try:
         data = await db.health_data.find().to_list(100)
-        return data
+        return json.loads(JSONEncoder().encode(data))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch data: {str(e)}")
 
