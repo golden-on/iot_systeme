@@ -8,6 +8,7 @@ import json
 from bson import ObjectId
 from dotenv import load_dotenv
 import os
+from typing import List
 
 app = FastAPI()
 
@@ -76,15 +77,16 @@ class JSONEncoder(json.JSONEncoder):
 class HealthData(BaseModel):
     device_id: str
     heart_rate: int
+    oxygen_level: int
     temperature: float
     timestamp: str
 
 # API routes
 @app.post("/data/")
-async def save_health_data(data: HealthData):
+async def save_health_data(data: List[HealthData]):
     try:
-        result = await db.health_data.insert_one(data.dict())
-        return {"message": "Data saved successfully", "id": str(result.inserted_id)}
+        result = await db.health_data.insert_many([entry.dict() for entry in data])
+        return {"message": "Data saved successfully", "ids": [str(id) for id in result.inserted_ids]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save data: {str(e)}")
 
@@ -106,4 +108,4 @@ async def get_device_data(device_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch data: {str(e)}")
 
-# Start server command: uvicorn main:app --reload
+# Start server command: uvicorn api:app --reload || python -m uvicorn api:app --reload
