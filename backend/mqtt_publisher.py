@@ -6,6 +6,7 @@ message = {
     "device_id": "device456",
     "heart_rate": 85,
     "oxygen_level": 95,
+    "temperature": 36.5,
     "timestamp": "2025-01-18T11:00:00Z"
 }
 
