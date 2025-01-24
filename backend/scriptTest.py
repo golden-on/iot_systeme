@@ -22,3 +22,5 @@ while True:
     )
     print(f"Message published: {message}")
     time.sleep(2)
+
+# run the script: python scriptTest.py
