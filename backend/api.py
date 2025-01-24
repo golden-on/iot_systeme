@@ -13,10 +13,7 @@ from typing import List
 app = FastAPI()
 
 # Enable CORS
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,7 +31,7 @@ client = AsyncIOMotorClient(MONGO_URI)
 db = client.health_monitoring
 
 # MQTT client configuration
-BROKER = "broker.hivemq.com"
+BROKER = "test.mosquitto.org"
 PORT = 1883
 TOPIC = "health/monitoring"
 
@@ -44,9 +41,19 @@ def on_message(client, userdata, msg):
     asyncio.set_event_loop(loop)
     try:
         # Process the message
-        print(f"Received message: {msg.payload.decode()}")
-    finally:
-        loop.close()
+        message = json.loads(msg.payload.decode())
+        print(f"Received message: {message}")
+        asyncio.run(save_health_data(message))
+    except Exception as e:
+        print(f"Error processing message: {e}")
+
+# Save health data to MongoDB
+async def save_health_data(data):
+    try:
+        result = await db.health_data.insert_one(data)
+        print(f"Data saved with ID: {result.inserted_id}")
+    except Exception as e:
+        print(f"Error saving data: {e}")
 
 # Initialize MQTT client
 mqtt_client = mqtt.Client()
@@ -54,8 +61,7 @@ mqtt_client.on_message = on_message
 
 # Connect to the MQTT broker
 mqtt_client.connect(BROKER, PORT, 60)
-
-# Start the MQTT client loop
+mqtt_client.subscribe(TOPIC)
 mqtt_client.loop_start()
 
 @app.on_event("startup")
@@ -83,12 +89,12 @@ class HealthData(BaseModel):
 
 # API routes
 @app.post("/data/")
-async def save_health_data(data: List[HealthData]):
+async def save_health_data_endpoint(data: HealthData):
     try:
-        result = await db.health_data.insert_many([entry.dict() for entry in data])
-        return {"message": "Data saved successfully", "ids": [str(id) for id in result.inserted_ids]}
+        result = await db.health_data.insert_one(data.dict())
+        return {"message": "Data saved successfully", "id": str(result.inserted_id)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save data: {str(e)}")
+        return {"error": str(e)}
 
 @app.get("/data/")
 async def get_data():
